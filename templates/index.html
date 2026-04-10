@@ -1,0 +1,845 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Data Leakage Detection</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=DM+Sans:ital,opsz,wght@0,9..40,400;0,9..40,600;0,9..40,700;1,9..40,400&family=Manrope:wght@500;600;700&family=JetBrains+Mono:wght@400;500&display=swap"
+      rel="stylesheet"
+    />
+    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}" />
+  </head>
+  <body>
+    <div id="loading-overlay" class="loading-overlay hidden" aria-hidden="true">
+      <div class="spinner" role="status" aria-label="Loading"></div>
+    </div>
+
+    <div id="algo-modal" class="modal hidden" role="dialog" aria-modal="true" aria-labelledby="algo-modal-title">
+      <div class="modal-backdrop" id="algo-modal-backdrop" aria-hidden="true"></div>
+      <div class="modal-panel">
+        <button type="button" class="modal-close" id="algo-modal-close" aria-label="Close">&times;</button>
+        <h3 id="algo-modal-title">Analysis algorithms</h3>
+        <div id="algo-modal-body" class="algo-modal-body"></div>
+      </div>
+    </div>
+
+    <div
+      id="reason-modal"
+      class="modal hidden"
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby="reason-modal-title"
+    >
+      <div class="modal-backdrop" id="reason-modal-backdrop" aria-hidden="true"></div>
+      <div class="modal-panel modal-panel-wide">
+        <button type="button" class="modal-close" id="reason-modal-close" aria-label="Close">&times;</button>
+        <div class="modal-head">
+          <h3 id="reason-modal-title">Classification rationale</h3>
+          <button type="button" class="btn btn-secondary btn-mini" id="reason-open-method">View methodology</button>
+        </div>
+        <div id="reason-modal-body" class="reason-modal-body"></div>
+      </div>
+    </div>
+
+    <div class="topbar">
+      <div class="brand">
+        <span class="brand-dot"></span>
+        LeakGuard Ops
+        <span class="brand-sub">Data loss prevention desk</span>
+      </div>
+      <div class="topbar-right">
+        <span class="pill pill-soft" id="pill-model">Model: loading...</span>
+        <span class="pill pill-ghost">Private-by-default</span>
+      </div>
+    </div>
+
+    <div class="wrap">
+      <header class="hero">
+        <div class="hero-text">
+          <p class="eyebrow">Security control room</p>
+          <h1>AI Data Leakage Detection</h1>
+          <p class="lede">
+            Upload CSV, JSON, or TXT or paste text. We cross-check strict regex signals with an ML classifier to
+            flag leaks and surface rationale you can act on.
+          </p>
+          <div class="hero-pills">
+            <span class="pill">Regex + TF-IDF + ML fusion</span>
+            <span class="pill">Explainers with actions</span>
+            <span class="pill">CSV / JSON / TXT</span>
+          </div>
+        </div>
+        <div class="hero-panel">
+          <h3>Run a check in three steps</h3>
+          <ol>
+            <li>Upload a CSV, JSON, or TXT file.</li>
+            <li>Pick text columns (auto-suggested) and tune the leak threshold.</li>
+            <li>Review verdicts, rationale, and download evidence.</li>
+          </ol>
+          <div class="hero-meta">
+            <span class="pill pill-soft">Designed for security reviewers</span>
+            <span class="pill pill-ghost">No training data required</span>
+          </div>
+        </div>
+      </header>
+
+      <div class="grid grid-2">
+        <section class="card">
+          <div class="card-head">
+            <div>
+              <p class="eyebrow">File analysis</p>
+              <h2>Dataset upload</h2>
+            </div>
+            <span class="pill pill-soft">Regex + ML</span>
+          </div>
+          <form id="upload-form" enctype="multipart/form-data">
+            <label for="file">File (CSV, JSON, TXT)</label>
+            <input type="file" id="file" name="file" accept=".csv,.json,.txt" required />
+            <p class="hint">
+              CSV encoding: UTF-8 (with BOM), CP1252, and Latin-1 are tried automatically. Leave max rows empty to
+              analyze the full file.
+            </p>
+            <div id="column-section" class="hidden section-gap-sm">
+              <label>Columns to analyze (text)</label>
+              <div id="column-checkboxes" class="column-checkboxes"></div>
+            </div>
+            <div class="control-grid section-gap-sm">
+              <div>
+                <label for="threshold">ML leak threshold (0-1)</label>
+                <input type="number" id="threshold" name="threshold" value="0.55" min="0" max="1" step="0.05" />
+              </div>
+              <div>
+                <label for="max-rows">Max rows (optional)</label>
+                <input
+                  type="number"
+                  id="max-rows"
+                  name="max_rows"
+                  min="1"
+                  placeholder="All rows"
+                  title="Limit rows for very large files"
+                />
+              </div>
+            </div>
+            <div class="actions">
+              <button type="button" class="btn btn-secondary" id="btn-preview">Preview columns</button>
+              <button type="submit" class="btn btn-primary" id="btn-analyze">Analyze dataset</button>
+            </div>
+            <div id="upload-error" class="error hidden"></div>
+          </form>
+        </section>
+
+        <section class="card">
+          <div class="card-head">
+            <div>
+              <p class="eyebrow">Instant check</p>
+              <h2>
+                Manual Text Review
+                <span class="live-badge">Live</span>
+              </h2>
+            </div>
+            <span class="pill pill-ghost">Single snippet</span>
+          </div>
+          <label for="manual-text">Paste any text</label>
+          <textarea id="manual-text" placeholder="Type or paste content to analyze"></textarea>
+          <p class="hint hint-tight">After a result appears, select the result box to review classification rationale.</p>
+          <div
+            id="live-result"
+            class="live-result live-result-interactive hidden"
+            title="Click for classification rationale"
+          ></div>
+          <div class="actions">
+            <button type="button" class="btn btn-primary" id="btn-analyze-text">Analyze text</button>
+          </div>
+          <div id="manual-error" class="error hidden"></div>
+        </section>
+      </div>
+      <section id="results-section" class="hidden section-gap-lg">
+        <div class="card">
+          <div class="card-head">
+            <div>
+              <p class="eyebrow">Output</p>
+              <h2>Results</h2>
+            </div>
+            <span class="pill pill-soft">Click rows for rationale</span>
+          </div>
+          <p class="hint results-hint">Select any row to review evidence, trigger source, and decision rationale.</p>
+          <div class="summary-bar" id="summary-bar"></div>
+          <p class="sub-summary" id="sub-summary"></p>
+          <p class="hint" id="columns-used"></p>
+          <div class="filters-inline">
+            <label
+              ><input type="checkbox" id="filter-leaks" /> Show leak rows only</label
+            >
+          </div>
+          <div class="actions actions-bottom">
+            <button type="button" class="btn btn-primary" id="btn-download">Download CSV</button>
+            <button type="button" class="btn btn-secondary" id="btn-download-json">Download JSON</button>
+          </div>
+          <div class="table-wrap">
+            <table class="results" id="results-table">
+              <thead>
+                <tr>
+                  <th>#</th>
+                  <th>Verdict</th>
+                  <th>Risk</th>
+                  <th>ML</th>
+                  <th>Score</th>
+                  <th>Patterns</th>
+                  <th>Masked hits</th>
+                  <th>Why</th>
+                  <th>Preview</th>
+                </tr>
+              </thead>
+              <tbody id="results-body"></tbody>
+            </table>
+          </div>
+          <div class="pager" id="pager">
+            <button type="button" class="btn btn-secondary" id="pager-prev">Previous</button>
+            <span id="pager-info"></span>
+            <button type="button" class="btn btn-secondary" id="pager-next">Next</button>
+          </div>
+        </div>
+      </section>
+
+      <footer>
+        <span id="footer-model" class="footer-model-link" title="Click for algorithms used">Loading model info...</span>
+        <br />
+        Flask | scikit-learn TF-IDF | Regex + classifier | Internal risk screening
+      </footer>
+    </div>
+
+    <script>
+      let lastPayload = null;
+      let currentPage = 0;
+      const PAGE_SIZE = 45;
+      let activeModelType = "random_forest";
+      let lastLiveAnalysis = null;
+      let lastReasonContext = null;
+
+      function updateModelUI(modelType) {
+        if (!modelType) return;
+        activeModelType = modelType;
+        const normalized = modelType.replace(/_/g, " ");
+        const pill = document.getElementById("pill-model");
+        if (pill) pill.textContent = "Model: " + normalized;
+        const footer = document.getElementById("footer-model");
+        if (footer) footer.textContent = "Active model: " + normalized + " (click for algorithms)";
+      }
+
+      function closeAlgoModal() {
+        document.getElementById("algo-modal").classList.add("hidden");
+        document.body.style.overflow = "";
+      }
+
+      function closeReasonModal() {
+        document.getElementById("reason-modal").classList.add("hidden");
+        document.body.style.overflow = "";
+      }
+
+      function openAlgoModal(context) {
+        const mt =
+          (lastPayload && lastPayload.summary && lastPayload.summary.model_type) ||
+          (lastLiveAnalysis && lastLiveAnalysis.model_type) ||
+          activeModelType ||
+          "random_forest";
+        document.getElementById("algo-modal-body").innerHTML = buildAlgorithmModalHtml(mt, context || {});
+        const title = document.getElementById("algo-modal-title");
+        if (context && context.row) {
+          title.textContent = "Algorithms used (row #" + context.row.row_index + ")";
+        } else if (context && context.live) {
+          title.textContent = "Algorithms used (manual text)";
+        } else {
+          title.textContent = "Algorithms used in analysis";
+        }
+        document.getElementById("algo-modal").classList.remove("hidden");
+        document.body.style.overflow = "hidden";
+      }
+
+      function decisionBasisLabel(basis) {
+        switch (basis) {
+          case "regex_and_ml":
+            return "Regex + ML";
+          case "regex_only":
+            return "Regex rules";
+          case "ml_only":
+            return "ML model";
+          default:
+            return "No leak trigger";
+        }
+      }
+
+      function buildRecommendedAction(row, regexMatches, risk, score, threshold) {
+        if (row.final_label === "SAFE") {
+          return "No immediate containment needed. Continue with standard handling controls.";
+        }
+        if (regexMatches.length) {
+          return "Pause external sharing, notify the data owner, and complete manual verification before release.";
+        }
+        if (!Number.isNaN(score) && !Number.isNaN(threshold) && score >= threshold) {
+          return "Escalate for reviewer approval before transmission because ML risk exceeded the configured threshold.";
+        }
+        if (risk === "high") {
+          return "Escalate to security review and quarantine this content until cleared.";
+        }
+        return "Route to secondary review before sharing.";
+      }
+
+      function deriveDecisionReasons(row, thresholdUsed) {
+        const reasons = [];
+        const score = Number(row.ml_leak_score ?? 0);
+        const threshold = Number(thresholdUsed);
+        const regexMatches = row.regex_matches || [];
+        if (regexMatches.length) {
+          reasons.push("Sensitive pattern(s) matched: " + regexMatches.join(", ") + ".");
+        }
+        if (!Number.isNaN(score) && !Number.isNaN(threshold)) {
+          if (score >= threshold) {
+            reasons.push("ML leak score " + score.toFixed(2) + " is above threshold " + threshold.toFixed(2) + ".");
+          } else {
+            reasons.push("ML leak score " + score.toFixed(2) + " is below threshold " + threshold.toFixed(2) + ".");
+          }
+        }
+        if (row.final_label === "LEAK" && regexMatches.length) {
+          reasons.push("Final verdict is LEAK because rule-based pattern detection has priority.");
+        } else if (row.final_label === "LEAK") {
+          reasons.push("Final verdict is LEAK due to ML confidence.");
+        } else {
+          reasons.push("Final verdict is SAFE because no leak trigger condition was met.");
+        }
+        return reasons;
+      }
+
+      function buildReasonModalHtml(row, isLive) {
+        const summaryThreshold =
+          (lastPayload && lastPayload.summary && Number(lastPayload.summary.threshold_used)) ||
+          Number(document.getElementById("threshold").value) ||
+          0.55;
+        const thresholdUsed = Number(row.threshold_used ?? summaryThreshold);
+        const score = Number(row.ml_leak_score ?? 0);
+        const regexMatches = row.regex_matches || [];
+        const maskedHits = row.regex_snippets_masked || [];
+        const decisionReasons =
+          Array.isArray(row.decision_reasons) && row.decision_reasons.length
+            ? row.decision_reasons
+            : deriveDecisionReasons(row, thresholdUsed);
+        const preview = row.preview || "";
+        const basis = decisionBasisLabel(row.decision_basis);
+        const risk = row.risk_level || "low";
+        const rowRef = isLive ? "Manual text input" : "Row #" + escapeHtml(String(row.row_index));
+        const confidence = Number.isNaN(score) ? "-" : (score * 100).toFixed(1) + "%";
+        const recommendation = buildRecommendedAction(row, regexMatches, risk, score, thresholdUsed);
+
+        const reasonList = decisionReasons
+          .map((reason) => '<li>' + escapeHtml(String(reason)) + "</li>")
+          .join("");
+
+        const matchTags = regexMatches.length
+          ? regexMatches
+              .map((name) => '<span class="reason-tag">' + escapeHtml(String(name)) + "</span>")
+              .join("")
+          : '<span class="reason-muted">No strict pattern hits</span>';
+
+        const maskedList = maskedHits.length
+          ? "<ul>" +
+            maskedHits
+              .map((hit) => "<li><code>" + escapeHtml(String(hit)) + "</code></li>")
+              .join("") +
+            "</ul>"
+          : '<p class="reason-muted">No masked snippets available.</p>';
+
+        const kpiItems =
+          '<div class="reason-kpi"><span class="reason-kpi-label">Trigger source</span><span class="reason-kpi-value">' +
+          escapeHtml(basis) +
+          "</span></div>" +
+          '<div class="reason-kpi"><span class="reason-kpi-label">Model score</span><span class="reason-kpi-value"><code>' +
+          (Number.isNaN(score) ? "-" : score.toFixed(4)) +
+          "</code></span></div>" +
+          '<div class="reason-kpi"><span class="reason-kpi-label">Threshold</span><span class="reason-kpi-value"><code>' +
+          (Number.isNaN(thresholdUsed) ? "-" : thresholdUsed.toFixed(2)) +
+          "</code></span></div>" +
+          '<div class="reason-kpi"><span class="reason-kpi-label">Confidence</span><span class="reason-kpi-value">' +
+          escapeHtml(confidence) +
+          "</span></div>";
+
+        return (
+          '<div class="reason-overview">' +
+          '<div class="reason-overview-top">' +
+          '<span class="badge ' +
+          (row.final_label === "LEAK" ? "badge-leak" : "badge-safe") +
+          '">' +
+          escapeHtml(String(row.final_label || "SAFE")) +
+          "</span>" +
+          '<span class="reason-basis">Triggered by: ' +
+          escapeHtml(basis) +
+          "</span>" +
+          "</div>" +
+          '<p class="reason-row-ref">' +
+          rowRef +
+          ' | Risk: <span class="risk-' +
+          escapeHtml(risk) +
+          '">' +
+          escapeHtml(risk) +
+          "</span></p>" +
+          '<p class="reason-score">Verdict confidence reflects model score and rule-based evidence.</p>' +
+          "</div>" +
+          '<div class="reason-kpi-grid">' +
+          kpiItems +
+          "</div>" +
+          '<div class="reason-grid">' +
+          '<section class="reason-card"><h4>Why this result</h4><ul class="reason-list">' +
+          reasonList +
+          "</ul></section>" +
+          '<section class="reason-card"><h4>Pattern categories</h4><div class="reason-tags">' +
+          matchTags +
+          "</div></section>" +
+          '<section class="reason-card"><h4>Masked evidence</h4>' +
+          maskedList +
+          "</section>" +
+          '<section class="reason-card"><h4>Preview</h4><p class="reason-preview">' +
+          escapeHtml(preview) +
+          "</p></section>" +
+          '<section class="reason-card reason-card-span"><h4>Recommended action</h4><p class="reason-recommend">' +
+          escapeHtml(recommendation) +
+          "</p></section>" +
+          "</div>"
+        );
+      }
+
+      function openReasonModal(row, isLive = false) {
+        lastReasonContext = { row, isLive };
+        const title = document.getElementById("reason-modal-title");
+        title.textContent =
+          row.final_label === "LEAK"
+            ? "Why this was flagged as LEAK"
+            : "Why this was marked SAFE";
+        document.getElementById("reason-modal-body").innerHTML = buildReasonModalHtml(row, isLive);
+        document.getElementById("reason-modal").classList.remove("hidden");
+        document.body.style.overflow = "hidden";
+      }
+
+      function classifierDetailsHtml(mt) {
+        switch (mt) {
+          case "naive_bayes":
+            return "<strong>Multinomial Naive Bayes</strong> - scikit-learn <code>MultinomialNB</code>. Probabilistic classifier on TF-IDF word counts.";
+          case "svm":
+            return "<strong>Linear SVM (SGD)</strong> - scikit-learn <code>SGDClassifier</code> with modified Huber loss and L2 penalty.";
+          case "random_forest":
+          default:
+            return "<strong>Random Forest</strong> - scikit-learn <code>RandomForestClassifier</code>. Ensemble trees vote on TF-IDF feature vectors.";
+        }
+      }
+
+      function buildAlgorithmModalHtml(mt, context) {
+        const th = document.getElementById("threshold")
+          ? document.getElementById("threshold").value
+          : "0.55";
+        let ctx = "";
+        if (context.row) {
+          const r = context.row;
+          ctx =
+            '<div class="algo-highlight"><strong>This dataset row</strong><br/>Row #' +
+            escapeHtml(String(r.row_index)) +
+            " | Final verdict: <strong>" +
+            escapeHtml(r.final_label) +
+            "</strong> | ML P(leak): <code>" +
+            escapeHtml(String(r.ml_leak_score)) +
+            "</code><br/>Regex categories: " +
+            escapeHtml((r.regex_matches || []).join(", ") || "none") +
+            "<br/>Risk level: " +
+            escapeHtml(r.risk_level || "-") +
+            "</div>";
+        } else if (context.live) {
+          const d = context.live;
+          ctx =
+            '<div class="algo-highlight"><strong>Last manual check</strong><br/>Verdict: <strong>' +
+            escapeHtml(d.final_label) +
+            "</strong> | ML P(leak): <code>" +
+            escapeHtml(String(d.ml_leak_score ?? "-")) +
+            "</code><br/>Patterns: " +
+            escapeHtml((d.regex_matches || []).join(", ") || "none") +
+            "</div>";
+        }
+        return (
+          ctx +
+          '<h4>Stack</h4><p>Python | Flask API | <strong>scikit-learn</strong> machine learning pipeline.</p>' +
+          '<h4>1) Pattern detection (rules)</h4><ul><li>Python <code>re</code> (regular expressions).</li><li>Scans for Aadhaar, PAN, card numbers (with Luhn check), SSN, AWS keys, JWT-like strings, IFSC, emails, phone numbers, passwords, and other sensitive markers.</li><li>If any strict pattern matches, the row is marked <strong>LEAK</strong> at the rules layer.</li></ul>' +
+          '<h4>2) Text preprocessing</h4><ul><li>Unicode normalization (NFKC), whitespace cleanup, light punctuation handling.</li><li>Optional stopword removal before vectorization.</li><li>Selected columns are concatenated per row for analysis.</li></ul>' +
+          '<h4>3) Feature extraction</h4><ul><li><strong>TF-IDF</strong> via <code>TfidfVectorizer</code> using unigram and bigram terms.</li></ul>' +
+          '<h4>4) Machine learning classifier</h4><ul><li>' +
+          classifierDetailsHtml(mt) +
+          "</li><li>Outputs probability of class <strong>LEAK</strong> (P(leak)).</li></ul>" +
+          '<h4>5) Decision fusion</h4><ul><li>If regex matched -> <strong>LEAK</strong> (overrides ML).</li><li>Else if P(leak) >= your threshold (currently <strong>' +
+          escapeHtml(th) +
+          "</strong>) -> <strong>LEAK</strong>.</li><li>Otherwise -> <strong>SAFE</strong>.</li><li>Risk level (low / medium / high) combines pattern hits and ML score.</li></ul>"
+        );
+      }
+
+      document.getElementById("algo-modal-close").addEventListener("click", closeAlgoModal);
+      document.getElementById("algo-modal-backdrop").addEventListener("click", closeAlgoModal);
+      document.getElementById("reason-modal-close").addEventListener("click", closeReasonModal);
+      document.getElementById("reason-modal-backdrop").addEventListener("click", closeReasonModal);
+      document.getElementById("reason-open-method").addEventListener("click", () => {
+        if (!lastReasonContext || !lastReasonContext.row) return;
+        const ctx = lastReasonContext;
+        closeReasonModal();
+        if (ctx.isLive) {
+          openAlgoModal({ live: ctx.row });
+        } else {
+          openAlgoModal({ row: ctx.row });
+        }
+      });
+      document.addEventListener("keydown", (e) => {
+        if (e.key !== "Escape") return;
+        if (!document.getElementById("reason-modal").classList.contains("hidden")) {
+          closeReasonModal();
+        } else if (!document.getElementById("algo-modal").classList.contains("hidden")) {
+          closeAlgoModal();
+        }
+      });
+
+      document.getElementById("results-body").addEventListener("click", (e) => {
+        const tr = e.target.closest("tr.clickable-row");
+        if (!tr || !lastPayload || !lastPayload.rows) return;
+        const ri = parseInt(tr.dataset.rowIndex, 10);
+        const row = lastPayload.rows.find((x) => x.row_index === ri);
+        if (row) openReasonModal(row, false);
+      });
+
+      document.getElementById("footer-model").addEventListener("click", () => {
+        openAlgoModal({});
+      });
+
+      const liveBox = document.getElementById("live-result");
+      liveBox.addEventListener("click", () => {
+        if (liveBox.classList.contains("hidden")) return;
+        if (lastLiveAnalysis) openReasonModal(lastLiveAnalysis, true);
+        else openAlgoModal({});
+      });
+
+      const debounce = (fn, ms) => {
+        let t;
+        return (...a) => {
+          clearTimeout(t);
+          t = setTimeout(() => fn(...a), ms);
+        };
+      };
+
+      function setLoading(on) {
+        const el = document.getElementById("loading-overlay");
+        el.classList.toggle("hidden", !on);
+        document.getElementById("btn-analyze").disabled = on;
+        document.getElementById("btn-preview").disabled = on;
+        document.getElementById("btn-analyze-text").disabled = on;
+      }
+
+      fetch("/api/model-info")
+        .then((r) => r.json())
+        .then((d) => {
+          if (d.model_loaded && d.model_type) {
+            updateModelUI(d.model_type);
+          } else {
+            const el = document.getElementById("footer-model");
+            if (el) el.textContent = "Model status unavailable";
+            const pill = document.getElementById("pill-model");
+            if (pill) pill.textContent = "Model: unavailable";
+          }
+        })
+        .catch(() => {
+          document.getElementById("footer-model").textContent = "Model info unavailable";
+          const pill = document.getElementById("pill-model");
+          if (pill) pill.textContent = "Model: unavailable";
+        });
+
+      document.getElementById("btn-preview").addEventListener("click", async () => {
+        const fileInput = document.getElementById("file");
+        const err = document.getElementById("upload-error");
+        err.classList.add("hidden");
+        if (!fileInput.files.length) {
+          err.textContent = "Choose a file first.";
+          err.classList.remove("hidden");
+          return;
+        }
+        setLoading(true);
+        const fd = new FormData();
+        fd.append("file", fileInput.files[0]);
+        try {
+          const res = await fetch("/api/preview-upload", { method: "POST", body: fd });
+          const data = await res.json();
+          if (!res.ok) throw new Error(data.error || "Preview failed");
+          const box = document.getElementById("column-checkboxes");
+          box.innerHTML = "";
+          data.columns.forEach((c) => {
+            const id = "col-" + encodeURIComponent(c);
+            const wrap = document.createElement("label");
+            const cb = document.createElement("input");
+            cb.type = "checkbox";
+            cb.value = c;
+            cb.id = id;
+            cb.checked = data.suggested_text_columns.includes(c);
+            wrap.appendChild(cb);
+            wrap.appendChild(document.createTextNode(" " + c));
+            box.appendChild(wrap);
+          });
+          document.getElementById("column-section").classList.remove("hidden");
+        } catch (e) {
+          err.textContent = e.message;
+          err.classList.remove("hidden");
+        } finally {
+          setLoading(false);
+        }
+      });
+
+      document.getElementById("upload-form").addEventListener("submit", async (e) => {
+        e.preventDefault();
+        const err = document.getElementById("upload-error");
+        err.classList.add("hidden");
+        const fileInput = document.getElementById("file");
+        if (!fileInput.files.length) return;
+        setLoading(true);
+        const fd = new FormData();
+        fd.append("file", fileInput.files[0]);
+        fd.append("threshold", document.getElementById("threshold").value);
+        const mr = document.getElementById("max-rows").value.trim();
+        if (mr) fd.append("max_rows", mr);
+        const checks = document.querySelectorAll("#column-checkboxes input:checked");
+        if (checks.length) {
+          fd.append("text_columns", JSON.stringify(Array.from(checks).map((x) => x.value)));
+        }
+        try {
+          const res = await fetch("/api/analyze-upload", { method: "POST", body: fd });
+          const data = await res.json();
+          if (!res.ok) throw new Error(data.error || "Analysis failed");
+          lastPayload = data;
+          if (data.summary && data.summary.model_type) {
+            updateModelUI(data.summary.model_type);
+          }
+          currentPage = 0;
+          document.getElementById("filter-leaks").checked = false;
+          renderResults(data);
+        } catch (e) {
+          err.textContent = e.message;
+          err.classList.remove("hidden");
+        } finally {
+          setLoading(false);
+        }
+      });
+
+      function getFilteredRows() {
+        if (!lastPayload || !lastPayload.rows) return [];
+        if (document.getElementById("filter-leaks").checked) {
+          return lastPayload.rows.filter((r) => r.final_label === "LEAK");
+        }
+        return lastPayload.rows;
+      }
+
+      function renderPager() {
+        const rows = getFilteredRows();
+        const totalPages = Math.max(1, Math.ceil(rows.length / PAGE_SIZE));
+        if (currentPage >= totalPages) currentPage = totalPages - 1;
+        const start = currentPage * PAGE_SIZE + 1;
+        const end = Math.min((currentPage + 1) * PAGE_SIZE, rows.length);
+        document.getElementById("pager-info").textContent =
+          rows.length === 0
+            ? "No rows"
+            : "Rows " + start + "-" + end + " of " + rows.length + " (page " + (currentPage + 1) + "/" + totalPages + ")";
+        document.getElementById("pager-prev").disabled = currentPage <= 0;
+        document.getElementById("pager-next").disabled = currentPage >= totalPages - 1;
+      }
+
+      function renderTableSlice() {
+        const rows = getFilteredRows();
+        const tbody = document.getElementById("results-body");
+        tbody.innerHTML = "";
+        const slice = rows.slice(currentPage * PAGE_SIZE, (currentPage + 1) * PAGE_SIZE);
+        slice.forEach((r) => {
+          const tr = document.createElement("tr");
+          tr.classList.add("clickable-row");
+          tr.dataset.rowIndex = String(r.row_index);
+          if (r.final_label === "LEAK") tr.classList.add("row-leak");
+          const badge =
+            r.final_label === "LEAK"
+              ? '<span class="badge badge-leak">LEAK</span>'
+              : '<span class="badge badge-safe">SAFE</span>';
+          const mlBadge =
+            r.ml_label === "LEAK"
+              ? '<span class="badge badge-leak">LEAK</span>'
+              : '<span class="badge badge-safe">SAFE</span>';
+          const risk = r.risk_level || "low";
+          const riskHtml = '<span class="risk-' + risk + '">' + risk + "</span>";
+          const masked = (r.regex_snippets_masked || []).join("; ") || "-";
+          const expl = r.explanation || "";
+          const explShort = expl.length > 120 ? expl.slice(0, 117) + "..." : expl;
+          tr.innerHTML =
+            "<td>" +
+            r.row_index +
+            "</td><td>" +
+            badge +
+            "</td><td>" +
+            riskHtml +
+            "</td><td>" +
+            mlBadge +
+            "</td><td><code>" +
+            r.ml_leak_score +
+            "</code></td><td>" +
+            escapeHtml((r.regex_matches || []).join(", ") || "-") +
+            "</td><td><code>" +
+            escapeHtml(masked) +
+            "</code></td><td class=\"explain-cell\" title=\"" +
+            escapeAttr(expl) +
+            "\">" +
+            escapeHtml(explShort) +
+            "</td><td>" +
+            escapeHtml(r.preview || "") +
+            "</td>";
+          tbody.appendChild(tr);
+        });
+        renderPager();
+      }
+
+      function escapeAttr(s) {
+        return String(s).replace(/&/g, "&amp;").replace(/"/g, "&quot;").replace(/</g, "&lt;");
+      }
+
+      function renderResults(data) {
+        document.getElementById("results-section").classList.remove("hidden");
+        const s = data.summary;
+        if (s.model_type) updateModelUI(s.model_type);
+        document.getElementById("summary-bar").innerHTML =
+          '<div class="stat stat-clickable"><div class="num">' +
+          s.total_records +
+          '</div><div class="lbl">Records</div></div>' +
+          '<div class="stat stat-clickable"><div class="num">' +
+          s.leaks_detected +
+          '</div><div class="lbl">Leaks</div></div>' +
+          '<div class="stat stat-clickable"><div class="num">' +
+          s.risk_percent +
+          '%</div><div class="lbl">Risk</div></div>';
+        document.querySelectorAll("#summary-bar .stat-clickable").forEach((el) => {
+          el.addEventListener("click", () => openAlgoModal({}));
+        });
+        let sub =
+          "Pattern-confirmed rows: " +
+          (s.regex_leak_rows ?? 0) +
+          " | ML-only leak rows: " +
+          (s.ml_only_leak_rows ?? 0) +
+          " | Classifier: " +
+          String(s.model_type || "-").replace(/_/g, " ");
+        if (s.truncated_from && s.truncated_from > s.total_records) {
+          sub +=
+            " | Analyzed first " +
+            s.total_records +
+            " of " +
+            s.truncated_from +
+            " rows (max rows limit).";
+        }
+        document.getElementById("sub-summary").textContent = sub;
+        document.getElementById("columns-used").textContent =
+          "Columns analyzed: " + (s.text_columns_used || []).join(", ");
+        currentPage = 0;
+        renderTableSlice();
+      }
+
+      document.getElementById("filter-leaks").addEventListener("change", () => {
+        currentPage = 0;
+        renderTableSlice();
+      });
+
+      document.getElementById("pager-prev").addEventListener("click", () => {
+        if (currentPage > 0) {
+          currentPage--;
+          renderTableSlice();
+        }
+      });
+      document.getElementById("pager-next").addEventListener("click", () => {
+        const rows = getFilteredRows();
+        const totalPages = Math.ceil(rows.length / PAGE_SIZE);
+        if (currentPage < totalPages - 1) {
+          currentPage++;
+          renderTableSlice();
+        }
+      });
+
+      function escapeHtml(s) {
+        const d = document.createElement("div");
+        d.textContent = s;
+        return d.innerHTML;
+      }
+
+      async function downloadResults(format) {
+        if (!lastPayload) return;
+        const res = await fetch("/api/download-results", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            rows: lastPayload.rows,
+            summary: lastPayload.summary,
+            format: format,
+          }),
+        });
+        if (!res.ok) return;
+        const blob = await res.blob();
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement("a");
+        a.href = url;
+        a.download = format === "json" ? "leak_analysis.json" : "leak_analysis.csv";
+        a.click();
+        URL.revokeObjectURL(url);
+      }
+
+      document.getElementById("btn-download").addEventListener("click", () => downloadResults("csv"));
+      document.getElementById("btn-download-json").addEventListener("click", () => downloadResults("json"));
+
+      async function runLive(text) {
+        const box = document.getElementById("live-result");
+        const th = parseFloat(document.getElementById("threshold").value) || 0.55;
+        if (!text.trim()) {
+          box.classList.add("hidden");
+          lastLiveAnalysis = null;
+          return;
+        }
+        try {
+          const res = await fetch("/api/analyze-text", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ text, threshold: th }),
+          });
+          const data = await res.json();
+          if (!res.ok) throw new Error(data.error);
+          lastLiveAnalysis = data;
+          if (data.model_type) updateModelUI(data.model_type);
+          box.classList.remove("hidden");
+          box.classList.toggle("safe", data.final_label === "SAFE");
+          box.classList.toggle("leak", data.final_label === "LEAK");
+          const risk = data.risk_level || "low";
+          box.innerHTML =
+            "<strong>" +
+            data.final_label +
+            "</strong> | Risk: <span class=\"risk-" +
+            risk +
+            "\">" +
+            risk +
+            "</span> | ML score: <code>" +
+            (data.ml_leak_score ?? "-") +
+            "</code> <span class=\"live-meta\">(click for classification rationale)</span><br/>Patterns: " +
+            escapeHtml((data.regex_matches || []).join(", ") || "none") +
+            "<br/>Masked: <code>" +
+            escapeHtml((data.regex_snippets_masked || []).join("; ") || "-") +
+            "</code><span class=\"live-explain\">" +
+            escapeHtml(data.explanation || "") +
+            "</span>";
+        } catch {
+          box.classList.add("hidden");
+          lastLiveAnalysis = null;
+        }
+      }
+
+      const debouncedLive = debounce(() => runLive(document.getElementById("manual-text").value), 550);
+      document.getElementById("manual-text").addEventListener("input", debouncedLive);
+      document.getElementById("btn-analyze-text").addEventListener("click", () =>
+        runLive(document.getElementById("manual-text").value)
+      );
+    </script>
+  </body>
+</html>

@@ -220,7 +220,6 @@ def analyze_text():
         {
             "final_label": row.get("final_label", "SAFE"),
             "ml_label": row.get("ml_label"),
-            "ml_leak_score": row.get("ml_leak_score"),
             "regex_matches": row.get("regex_matches", []),
             "regex_snippets_masked": row.get("regex_snippets_masked", []),
             "pattern_summary": row.get("pattern_summary"),
